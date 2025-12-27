@@ -152,12 +152,15 @@
 
   async function executeAction(action) {
     const { type, targetId, value, options } = action;
+    console.log(`[ChatPilot] Executing: ${type} on ${targetId}`, action);
 
     const element = document.querySelector(`[data-agent-id="${targetId}"]`);
 
-    if (!element && type !== 'SCROLL' && type !== 'WAIT') {
+    if (!element && type !== 'SCROLL' && type !== 'WAIT' && type !== 'OPEN_URL') {
       return { success: false, error: `Element not found: ${targetId}` };
     }
+
+    showAgentStatus(`Action: ${type} ${action.description || ''}`);
 
     try {
       switch (type) {
@@ -173,14 +176,28 @@
           await sleep(200);
           highlightElement(element);
           element.focus();
-          element.value = '';
-          // Simulate typing character by character
-          for (const char of value) {
-            element.value += char;
-            element.dispatchEvent(new Event('input', { bubbles: true }));
-            await sleep(30);
+
+          // Clear current value if it's an input/textarea
+          if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
+            element.value = '';
+          } else if (element.isContentEditable) {
+            element.innerText = '';
           }
-          element.dispatchEvent(new Event('change', { bubbles: true }));
+
+          // Use execCommand for better compatibility with frameworks like React/Angular
+          try {
+            document.execCommand('insertText', false, value);
+          } catch (e) {
+            console.warn('execCommand failed, falling back to manual input');
+            element.value = value;
+          }
+
+          // Trigger all necessary events
+          const events = ['input', 'change', 'blur'];
+          events.forEach(etype => {
+            element.dispatchEvent(new Event(etype, { bubbles: true }));
+          });
+
           return { success: true, action: 'typed', targetId, value };
 
         case 'SCROLL':
@@ -212,6 +229,10 @@
           element.dispatchEvent(new Event('change', { bubbles: true }));
           return { success: true, action: 'checked', targetId };
 
+        case 'OPEN_URL':
+          window.location.href = value;
+          return { success: true, action: 'opened_url', url: value };
+
         default:
           return { success: false, error: `Unknown action type: ${type}` };
       }
@@ -222,6 +243,8 @@
 
   async function executeActions(actions) {
     const results = [];
+    showAgentStatus(`Executing ${actions.length} actions...`);
+
     for (const action of actions) {
       const result = await executeAction(action);
       results.push(result);
@@ -233,6 +256,8 @@
       // Small delay between actions
       await sleep(300);
     }
+
+    setTimeout(hideAgentStatus, 2000);
     return results;
   }
 
@@ -255,6 +280,70 @@
       element.style.outline = originalOutline;
       element.style.transition = originalTransition;
     }, 1000);
+  }
+
+  function showAgentStatus(text) {
+    let statusEl = document.getElementById('chatpilot-status-bar');
+    if (!statusEl) {
+      statusEl = document.createElement('div');
+      statusEl.id = 'chatpilot-status-bar';
+      statusEl.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+        color: white;
+        padding: 10px 18px;
+        border-radius: 12px;
+        font-family: sans-serif;
+        font-size: 14px;
+        font-weight: 600;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        z-index: 999999;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        animation: chatpilot-slide-in 0.3s ease-out;
+      `;
+
+      const dot = document.createElement('div');
+      dot.style.cssText = `
+        width: 8px;
+        height: 8px;
+        background: white;
+        border-radius: 50%;
+        animation: chatpilot-pulse 1s infinite alternate;
+      `;
+
+      const style = document.createElement('style');
+      style.textContent = `
+        @keyframes chatpilot-slide-in {
+          from { transform: translateX(100%); opacity: 0; }
+          to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes chatpilot-pulse {
+          from { opacity: 0.4; transform: scale(0.8); }
+          to { opacity: 1; transform: scale(1.2); }
+        }
+      `;
+      document.head.appendChild(style);
+      statusEl.appendChild(dot);
+      const textNode = document.createElement('span');
+      textNode.id = 'chatpilot-status-text';
+      statusEl.appendChild(textNode);
+      document.body.appendChild(statusEl);
+    }
+
+    document.getElementById('chatpilot-status-text').textContent = text;
+  }
+
+  function hideAgentStatus() {
+    const statusEl = document.getElementById('chatpilot-status-bar');
+    if (statusEl) {
+      statusEl.style.transition = 'opacity 0.5s ease-out';
+      statusEl.style.opacity = '0';
+      setTimeout(() => statusEl.remove(), 500);
+    }
   }
 
   // ============================================

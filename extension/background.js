@@ -53,7 +53,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'GET_PAGE_CONTENT') {
         // Get content from the active tab
-        chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+        chrome.tabs.query({ active: true, lastFocusedWindow: true }, async (tabs) => {
             if (tabs[0]) {
                 try {
                     const results = await chrome.scripting.executeScript({
@@ -78,7 +78,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.type === 'OPEN_SIDE_PANEL') {
-        chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+        chrome.tabs.query({ active: true, lastFocusedWindow: true }, async (tabs) => {
             if (tabs[0]) {
                 await chrome.sidePanel.open({ tabId: tabs[0].id });
                 sendResponse({ success: true });

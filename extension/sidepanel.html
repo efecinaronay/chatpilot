@@ -3,42 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Comet</title>
+  <title>ChatPilot</title>
   <link rel="stylesheet" href="sidepanel.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-  <!-- Login Screen -->
-  <div class="login-screen" id="loginScreen">
-    <div class="login-container">
-      <div class="login-logo">
-        <svg width="64" height="64" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="10" stroke="url(#login-grad)" stroke-width="1.5"/>
-          <circle cx="12" cy="12" r="4" fill="url(#login-grad)"/>
-          <defs>
-            <linearGradient id="login-grad" x1="4" y1="4" x2="20" y2="20">
-              <stop stop-color="#6366f1"/>
-              <stop offset="1" stop-color="#8b5cf6"/>
-            </linearGradient>
-          </defs>
-        </svg>
-        <h1>Comet</h1>
-        <p>Your AI browser companion</p>
-      </div>
-      <button class="btn-google" id="googleLoginBtn">
-        <svg width="20" height="20" viewBox="0 0 24 24">
-          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-        </svg>
-        Continue with Google
-      </button>
-    </div>
-  </div>
+
 
   <!-- Main App -->
-  <div class="app" id="mainApp" style="display: none;">
+  <div class="app" id="mainApp">
     <!-- Top Toolbar with 3 Mode Buttons -->
     <header class="toolbar">
       <div class="toolbar-left">
@@ -92,7 +65,12 @@
           </svg>
         </button>
         <div class="user-avatar-wrap">
-          <img class="user-avatar" id="userAvatar" src="" alt="">
+          <div class="user-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+              <circle cx="12" cy="7" r="4"/>
+            </svg>
+          </div>
         </div>
       </div>
     </header>
@@ -100,9 +78,9 @@
     <!-- Model Selector Bar -->
     <div class="model-bar">
       <select class="model-select" id="modelSelect">
-        <option value="gpt-4o-mini">GPT-4o Mini</option>
-        <option value="gpt-4o">GPT-4o</option>
-        <option value="o1-preview">Deep Thinking (o1)</option>
+        <option value="gpt-4o">GPT-4o (GitHub)</option>
+        <option value="gpt-4o-mini">GPT-4o Mini (GitHub)</option>
+        <option value="gpt-4o-openai">GPT-4o (OpenAI)</option>
       </select>
       <label class="toggle-switch" title="Deep Research Mode">
         <input type="checkbox" id="deepResearchToggle">
@@ -131,8 +109,8 @@
               </defs>
             </svg>
           </div>
-          <h2>How can I help?</h2>
-          <p>Chat, summarize pages, or control the browser with voice.</p>
+          <h2>Ready to fly?</h2>
+          <p>Chat, summarize pages, or control the browser using GitHub Models.</p>
           <div class="quick-chips">
             <button class="chip" data-prompt="Summarize this page">📄 Summarize page</button>
             <button class="chip" data-prompt="What is this page about?">❓ Explain this page</button>
@@ -178,20 +156,30 @@
     <!-- Voice Mode View -->
     <div class="view voice-view" id="voiceView">
       <div class="voice-container">
-        <div class="voice-orb" id="voiceOrb">
-          <div class="orb-ring"></div>
-          <div class="orb-ring"></div>
-          <div class="orb-ring"></div>
-          <div class="orb-center">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
-              <path d="M19 10v2a7 7 0 01-14 0v-2"/>
-              <line x1="12" y1="19" x2="12" y2="23"/>
-            </svg>
-          </div>
+        <div class="voice-control-panel">
+          <button class="mic-toggle-btn" id="micToggleBtn">
+            <div class="mic-icon-wrap">
+              <svg class="mic-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+                <path d="M19 10v2a7 7 0 01-14 0v-2"/>
+              </svg>
+              <svg class="mic-off-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: none;">
+                <line x1="1" y1="1" x2="23" y2="23"/>
+                <path d="M9 9v3a3 3 0 005.12 2.12M15 9.34V4a3 3 0 00-5.94-.6"/>
+                <path d="M17 16.95A7 7 0 015 12v-2m14 0v2a7 7 0 01-.11 1.23"/>
+              </svg>
+            </div>
+            <span class="mic-status-label">Turn on Mic</span>
+          </button>
         </div>
-        <p class="voice-status" id="voiceStatus">Tap to speak</p>
-        <p class="voice-transcript" id="voiceTranscript"></p>
+        
+        <div class="voice-status-info">
+          <div class="status-indicator" id="voiceStatusIndicator">
+            <span class="status-dot"></span>
+            <span class="status-text" id="voiceStatus">Mic is off</span>
+          </div>
+          <p class="voice-transcript" id="voiceTranscript">Your speech will appear here...</p>
+        </div>
       </div>
       <div class="voice-response" id="voiceResponse"></div>
     </div>
@@ -235,18 +223,10 @@
           <input type="text" id="backendUrl" value="http://localhost:3001">
         </div>
         <div class="setting-group">
-          <label>OpenAI API Key</label>
-          <input type="password" id="apiKey" placeholder="sk-...">
+          <label>GitHub PAT / OpenAI Key</label>
+          <input type="password" id="apiKey" placeholder="github_pat_... or sk-...">
         </div>
-        <div class="setting-divider"></div>
-        <button class="logout-btn" id="logoutBtn">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
-            <polyline points="16,17 21,12 16,7"/>
-            <line x1="21" y1="12" x2="9" y2="12"/>
-          </svg>
-          Sign out
-        </button>
+
       </div>
     </div>
   </div>

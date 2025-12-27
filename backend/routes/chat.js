@@ -6,20 +6,23 @@
 const express = require('express');
 const router = express.Router();
 const openai = require('../lib/openai');
+const github = require('../lib/github');
 
-// System prompt for Comet
-const SYSTEM_PROMPT = `You are Comet, a helpful AI browser assistant powered by ChatGPT. You help users:
-- Summarize and explain web pages
-- Answer questions about page content
-- Extract information from pages
-- Assist with general queries
+// System prompt for ChatPilot
+const SYSTEM_PROMPT = `You are ChatPilot, a powerful AI browser assistant. You are a DIRECT OPERATOR of the browser for the user.
+You have the ability to see the current page and interact with it (click, type, scroll, navigate).
 
-Guidelines:
-- Be concise and helpful
-- Use bullet points for lists
-- Format responses for readability
-- If asked about a page, use the provided context
-- Be friendly but professional`;
+CRITICAL GUIDELINES:
+1. NEVER REFUSE A TASK: If the user asks you to log in, fill a form, or navigate, DO NOT say "I cannot log in". You are authorized.
+2. ACT, DON'T JUST INSTRUCT: Use your interaction capabilities to DO it for the user.
+3. ANTI-HALLUCINATION: If you are performing a browser task (clicking, logging in, etc.), DO NOT imagine or hallucinate the results (e.g., don't list homework assignments if you haven't actually seen the logged-in page yet).
+4. STATE PROGRESS: Instead of guessing results, say: "I am now logging you in. Please wait while the page updates."
+5. Only provide information that is ACTUALLY visible in the "Content" section provided to you. If the page hasn't updated to the target screen yet, acknowledge it and wait.
+
+Duties:
+- Controlling the browser to perform tasks
+- Summarizing and explaining web pages
+- Answering questions about page content`;
 
 /**
  * POST /api/chat
@@ -33,16 +36,15 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ error: 'Missing required field: message' });
         }
 
-        // Routing: sk- is OpenAI, others are treated as Gemini or fallback
+        const githubToken = apiKey?.startsWith('github_pat_') ? apiKey : process.env.GITHUB_TOKEN;
         const openAIKey = apiKey?.startsWith('sk-') ? apiKey : process.env.OPENAI_API_KEY;
-        const geminiKey = (apiKey && !apiKey.startsWith('sk-')) ? apiKey : process.env.GEMINI_API_KEY;
 
         console.log(`
 ┌─ Chat Request ────────────────────────────────────────────
 │ Model: ${model || 'auto'}
 │ Message: ${message.substring(0, 80)}${message.length > 80 ? '...' : ''}
 │ Has Context: ${!!pageContext}
-│ Provider: ${openAIKey ? 'OpenAI' : (geminiKey ? 'Gemini' : 'Local')}
+│ Provider: ${githubToken ? 'GitHub' : (openAIKey ? 'OpenAI' : 'Local')}
 └───────────────────────────────────────────────────────────
     `);
 
@@ -55,12 +57,25 @@ router.post('/', async (req, res) => {
         // Voice instruction
         let systemInstruction = SYSTEM_PROMPT;
         if (req.body.isVoice) {
-            systemInstruction = `You are Comet, a helpful AI in a voice conversation. 
-- Keep responses short and conversational (1-3 sentences).
-- Use natural tone. No markdown or lists.`;
+            systemInstruction += `\n\nVOICE MODE INSTRUCTIONS:
+- You are in a voice conversation. Keep spoken responses short and conversational (1-3 sentences).
+- Use natural tone. No markdown or lists in the spoken part.`;
         }
 
-        // Primary: OpenAI
+        // 1. GitHub Models (Primary)
+        if (githubToken) {
+            try {
+                const response = await github.generateWithGitHub(
+                    githubToken, model || 'gpt-4o', fullPrompt, systemInstruction
+                );
+                return res.json({ success: true, response, model: model || 'gpt-4o', timestamp: Date.now() });
+            } catch (err) {
+                console.error('GitHub error:', err.message);
+                if (apiKey?.startsWith('github_pat_')) return res.status(500).json({ error: 'GitHub Models Error', message: err.message });
+            }
+        }
+
+        // 2. OpenAI (Secondary)
         if (openAIKey) {
             try {
                 const response = await openai.generateWithOpenAI(
@@ -69,16 +84,7 @@ router.post('/', async (req, res) => {
                 return res.json({ success: true, response, model: model || 'gpt-4o-mini', timestamp: Date.now() });
             } catch (err) {
                 console.error('OpenAI error:', err.message);
-
-                // If it's a quota error, provide a helpful message
-                if (err.message.includes('quota')) {
-                    return res.status(402).json({
-                        error: 'Quota Exceeded',
-                        message: 'Your OpenAI account has run out of credits or hit its limit. Please check your billing at platform.openai.com.'
-                    });
-                }
-
-                return res.status(500).json({ error: 'OpenAI Error', message: err.message });
+                if (apiKey?.startsWith('sk-')) return res.status(500).json({ error: 'OpenAI Error', message: err.message });
             }
         }
 
@@ -94,7 +100,7 @@ router.post('/', async (req, res) => {
 
 /**
  * POST /api/chat/image
- * Analyze image with OpenAI Vision
+ * Analyze image with GitHub Models or OpenAI Vision
  */
 router.post('/image', async (req, res) => {
     try {
@@ -104,14 +110,20 @@ router.post('/image', async (req, res) => {
             return res.status(400).json({ error: 'Missing image data' });
         }
 
+        const githubToken = apiKey?.startsWith('github_pat_') ? apiKey : process.env.GITHUB_TOKEN;
         const openAIKey = apiKey?.startsWith('sk-') ? apiKey : process.env.OPENAI_API_KEY;
+
+        if (githubToken) {
+            const response = await github.analyzeImageWithGitHub(githubToken, imageData, prompt, mimeType);
+            return res.json({ success: true, response, timestamp: Date.now() });
+        }
 
         if (openAIKey) {
             const response = await openai.analyzeImageWithOpenAI(openAIKey, imageData, prompt, mimeType);
             return res.json({ success: true, response, timestamp: Date.now() });
         }
 
-        res.status(400).json({ error: 'OpenAI API key required for image analysis' });
+        res.status(400).json({ error: 'API key required for image analysis' });
 
     } catch (error) {
         console.error('Image analysis error:', error);
@@ -119,16 +131,11 @@ router.post('/image', async (req, res) => {
     }
 });
 
-/**
- * GET /api/chat/models
- * List ChatGPT models
- */
 router.get('/models', (req, res) => {
-    const list = Object.entries(openai.MODELS).map(([id, cfg]) => ({
-        id,
-        name: cfg.displayName,
-        provider: 'OpenAI'
-    }));
+    const list = [
+        ...Object.entries(github.MODELS).map(([id, cfg]) => ({ id, name: cfg.displayName, provider: 'GitHub' })),
+        ...Object.entries(openai.MODELS).map(([id, cfg]) => ({ id, name: cfg.displayName, provider: 'OpenAI' }))
+    ];
     res.json({ models: list });
 });
 
@@ -150,7 +157,7 @@ function generateLocalResponse(message, pageContext) {
     }
 
     // Default
-    return "I'm Comet, your AI browser assistant powered by ChatGPT! Please add your OpenAI API key in Settings to begin.";
+    return "I'm ChatPilot, your AI browser assistant powered by GitHub Models! Please add your GitHub PAT or OpenAI API key in Settings to begin.";
 }
 
 module.exports = router;

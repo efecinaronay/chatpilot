@@ -8,7 +8,6 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const agentRoutes = require('./routes/agent');
-const authRoutes = require('./routes/auth');
 const chatRoutes = require('./routes/chat');
 
 const app = express();
@@ -32,7 +31,6 @@ app.use((req, res, next) => {
 
 // Routes
 app.use('/api', agentRoutes);
-app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
 
 // Health check
@@ -57,14 +55,13 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
     console.log(`
 ╔════════════════════════════════════════════════════════════╗
-║           AI Browser Controller Backend                   ║
+║           ChatPilot Backend                               ║
 ║                                                            ║
 ║   Server running on http://localhost:${PORT}                ║
 ║                                                            ║
 ║   Endpoints:                                               ║
 ║   • POST /api/analyze      - Analyze DOM and actions       ║
 ║   • POST /api/chat         - Chat and summarization        ║
-║   • POST /api/auth/verify  - Verify Google OAuth token     ║
 ║   • GET  /health           - Health check                  ║
 ╚════════════════════════════════════════════════════════════╝
   `);

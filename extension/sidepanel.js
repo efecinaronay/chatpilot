@@ -13,15 +13,18 @@ class CometPanel {
         this.synthesis = window.speechSynthesis;
         this.isListening = false;
         this.currentModel = 'gpt-4o-mini';
+        this.isMuted = true;
+        this.isSpeaking = false;
+        this.isContinuousVoice = true;
+        this.pendingIntent = null;
+        this.isExecuting = false;
 
         this.init();
     }
 
     async init() {
         // Elements
-        this.loginScreen = document.getElementById('loginScreen');
         this.mainApp = document.getElementById('mainApp');
-        this.googleLoginBtn = document.getElementById('googleLoginBtn');
 
         // Toolbar
         this.modeBtns = document.querySelectorAll('.mode-btn');
@@ -46,7 +49,11 @@ class CometPanel {
         this.chips = document.querySelectorAll('.chip');
 
         // Voice
-        this.voiceOrb = document.getElementById('voiceOrb');
+        this.micToggleBtn = document.getElementById('micToggleBtn');
+        this.micStatusLabel = document.querySelector('.mic-status-label');
+        this.micIcon = document.querySelector('.mic-icon');
+        this.micOffIcon = document.querySelector('.mic-off-icon');
+        this.voiceStatusIndicator = document.getElementById('voiceStatusIndicator');
         this.voiceStatus = document.getElementById('voiceStatus');
         this.voiceTranscript = document.getElementById('voiceTranscript');
         this.voiceResponse = document.getElementById('voiceResponse');
@@ -69,8 +76,8 @@ class CometPanel {
         await this.loadSettings();
         await this.loadModels();
 
-        // Check auth
-        await this.checkAuth();
+        // Initial UI Update
+        this.updateContext();
 
         // Bind events
         this.bindEvents();
@@ -79,6 +86,16 @@ class CometPanel {
         chrome.runtime.onMessage.addListener((msg) => {
             if (msg.type === 'CONTEXT_MENU_ACTION') {
                 this.handleContextMenuAction(msg);
+            }
+        });
+
+        // Auto-resume agent after page navigation
+        chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+            if (changeInfo.status === 'complete' && this.pendingIntent) {
+                console.log('Page updated, resuming pending intent:', this.pendingIntent);
+                setTimeout(() => {
+                    this.executeActions(this.pendingIntent, true);
+                }, 1000); // Wait for content scripts to settle
             }
         });
     }
@@ -106,10 +123,6 @@ class CometPanel {
     }
 
     bindEvents() {
-        // Login
-        this.googleLoginBtn.addEventListener('click', () => this.handleLogin());
-        this.logoutBtn.addEventListener('click', () => this.handleLogout());
-
         // Mode switching
         this.modeBtns.forEach(btn => {
             btn.addEventListener('click', () => this.switchMode(btn.dataset.mode));
@@ -174,8 +187,8 @@ class CometPanel {
             });
         }
 
-        // Voice mode orb
-        this.voiceOrb.addEventListener('click', () => this.toggleVoiceMode());
+        // Voice mode mic toggle
+        this.micToggleBtn.addEventListener('click', () => this.toggleMic());
 
         // Summarize refresh
         this.refreshSummary.addEventListener('click', () => this.summarizePage());
@@ -235,100 +248,7 @@ class CometPanel {
         }
     }
 
-    // ============================================
-    // AUTHENTICATION
-    // ============================================
 
-    async checkAuth() {
-        try {
-            const result = await chrome.storage.local.get(['user', 'authToken']);
-            if (result.user && result.authToken) {
-                this.user = result.user;
-                this.showApp();
-            } else {
-                this.showLogin();
-            }
-        } catch (e) {
-            this.showLogin();
-        }
-    }
-
-    async handleLogin() {
-        try {
-            this.googleLoginBtn.disabled = true;
-            this.googleLoginBtn.textContent = 'Signing in...';
-
-            const token = await new Promise((resolve, reject) => {
-                chrome.identity.getAuthToken({ interactive: true }, (token) => {
-                    if (chrome.runtime.lastError) {
-                        reject(new Error(chrome.runtime.lastError.message));
-                    } else {
-                        resolve(token);
-                    }
-                });
-            });
-
-            const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-
-            if (!response.ok) throw new Error('Failed to fetch user info');
-
-            const userInfo = await response.json();
-
-            this.user = {
-                id: userInfo.id,
-                email: userInfo.email,
-                name: userInfo.name,
-                picture: userInfo.picture
-            };
-
-            await chrome.storage.local.set({ user: this.user, authToken: token });
-            this.showApp();
-
-        } catch (error) {
-            alert('Login failed: ' + error.message);
-        } finally {
-            this.googleLoginBtn.disabled = false;
-            this.googleLoginBtn.innerHTML = `
-        <svg width="20" height="20" viewBox="0 0 24 24">
-          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-        </svg>
-        Continue with Google
-      `;
-        }
-    }
-
-    async handleLogout() {
-        const result = await chrome.storage.local.get(['authToken']);
-        if (result.authToken) {
-            await new Promise(resolve => {
-                chrome.identity.removeCachedAuthToken({ token: result.authToken }, resolve);
-            });
-        }
-        await chrome.storage.local.remove(['user', 'authToken']);
-        this.user = null;
-        this.showLogin();
-    }
-
-    showLogin() {
-        this.loginScreen.style.display = 'flex';
-        this.mainApp.style.display = 'none';
-    }
-
-    showApp() {
-        this.loginScreen.style.display = 'none';
-        this.mainApp.style.display = 'flex';
-
-        if (this.user?.picture) {
-            this.userAvatar.src = this.user.picture;
-        }
-
-        this.updateContext();
-    }
 
     // ============================================
     // SETTINGS
@@ -389,6 +309,7 @@ class CometPanel {
             this.chatView.classList.add('active');
         } else if (mode === 'voice') {
             this.voiceView.classList.add('active');
+            this.updateVoiceModeStatus();
         } else if (mode === 'summarize') {
             this.summarizeView.classList.add('active');
             this.summarizePage();
@@ -419,6 +340,70 @@ class CometPanel {
         });
     }
 
+    async ensureContentScript(tabId, url) {
+        // Skip restricted URLs
+        if (!url || url.startsWith('chrome://') || url.startsWith('edge://') || url.startsWith('about:') || url.includes('chrome.google.com/webstore')) {
+            console.warn('Restricted URL, content script cannot be injected:', url);
+            return false;
+        }
+
+        try {
+            // Test if script is already there
+            const isReady = await new Promise((resolve) => {
+                chrome.tabs.sendMessage(tabId, { type: 'PING' }, (response) => {
+                    if (chrome.runtime.lastError) resolve(false);
+                    else resolve(response?.status === 'ready');
+                });
+            });
+
+            if (isReady) return true;
+
+            // Not ready, try to inject manually
+            console.log('Content script not found in tab, injecting manually...');
+            await chrome.scripting.executeScript({
+                target: { tabId: tabId },
+                files: ['content_script.js']
+            });
+
+            // Wait a moment for script to initialize
+            await new Promise(r => setTimeout(r, 200));
+            return true;
+        } catch (e) {
+            console.error('Failed to ensure content script:', e);
+            return false;
+        }
+    }
+
+    async getPrunedDOM() {
+        try {
+            const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+            if (!tab) return null;
+
+            const isReady = await this.ensureContentScript(tab.id, tab.url);
+            if (!isReady) return {
+                url: tab.url,
+                title: tab.title,
+                elements: [],
+                error: 'Page restricted or content script failed to load'
+            };
+
+            console.log('Scraping DOM from tab:', tab.id);
+            return new Promise((resolve) => {
+                chrome.tabs.sendMessage(tab.id, { type: 'SCRAPE_DOM' }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.warn('Scrape DOM error:', chrome.runtime.lastError.message);
+                        resolve(null);
+                    } else {
+                        resolve(response?.data || null);
+                    }
+                });
+            });
+        } catch (e) {
+            console.error('getPrunedDOM failed:', e);
+            return null;
+        }
+    }
+
     // ============================================
     // CHAT
     // ============================================
@@ -447,6 +432,12 @@ class CometPanel {
         this.isProcessing = true;
         this.showThinking();
 
+        // Start agent in parallel if it looks like a command
+        if (this.isActionIntent(message)) {
+            console.log('Action intent detected:', message);
+            this.executeActions(message);
+        }
+
         try {
             const pageContent = await this.getPageContent();
             const response = await this.callBackend('/api/chat', {
@@ -457,7 +448,8 @@ class CometPanel {
             });
 
             this.hideThinking();
-            this.addMessage('ai', response.response || response.message || 'I received your message.');
+            const text = response.response || response.message || 'I received your message.';
+            this.addMessage('ai', text);
 
         } catch (error) {
             this.hideThinking();
@@ -465,6 +457,95 @@ class CometPanel {
         } finally {
             this.isProcessing = false;
             this.handleInputChange();
+        }
+    }
+
+    isActionIntent(text) {
+        const lower = text.toLowerCase();
+        const actionKeywords = [
+            'click', 'type', 'enter', 'search', 'scroll', 'open', 'go to', 'visit',
+            'put', 'select', 'fill', 'login', 'submit', 'buy', 'order', 'add',
+            'cart', 'find', 'show', 'clear', 'check', 'set', 'choose', 'hit',
+            'press', 'navigate', 'logout', 'sign in', 'sign up'
+        ];
+
+        // Also trigger if it looks like a direct command about the page
+        const isCommand = actionKeywords.some(kw => lower.includes(kw));
+        const isAskingCapabilty = lower.includes('can you') && (lower.includes('click') || lower.includes('find') || lower.includes('open'));
+
+        return isCommand || isAskingCapabilty;
+    }
+
+    async executeActions(intent, isResumption = false) {
+        if (this.isExecuting && !isResumption) {
+            console.log('Already executing an agent task. Context update will follow.');
+            return;
+        }
+
+        try {
+            this.isExecuting = true;
+            this.pendingIntent = intent; // Keep track for navigation resumption
+            console.log('Executing actions for intent:', intent);
+            this.contextText.textContent = 'Analysing...';
+            const dom = await this.getPrunedDOM();
+
+            const response = await this.callBackend('/api/analyze', {
+                intent: intent,
+                dom: dom || { url: window.location.href, elements: [] }
+            });
+
+            if (response.actions && response.actions.length > 0) {
+                this.contextText.textContent = `Executing actions...`;
+
+                const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+                if (!tab) return;
+
+                // Ensure content script is present for element actions
+                const isReady = await this.ensureContentScript(tab.id, tab.url);
+
+                for (const action of response.actions) {
+                    // Handle OPEN_URL natively in the side panel for reliability
+                    if (action.type === 'OPEN_URL') {
+                        let url = action.value;
+                        if (!url.startsWith('http')) url = 'https://' + url;
+                        await chrome.tabs.update(tab.id, { url: url });
+                        this.contextText.textContent = 'Navigating...';
+                        this.isExecuting = false; // Allow resumption listener to take over
+                        return; // Stop further actions as page is changing
+                    }
+
+                    if (!isReady) {
+                        console.warn('Cannot execute element action: Page restricted');
+                        continue;
+                    }
+
+                    // For other actions, send to content script with retry/error handling
+                    await new Promise((resolve) => {
+                        chrome.tabs.sendMessage(tab.id, {
+                            type: 'EXECUTE_ACTIONS',
+                            actions: [action]
+                        }, (resp) => {
+                            if (chrome.runtime.lastError) {
+                                console.warn('Action failed:', chrome.runtime.lastError.message);
+                                resolve({ success: false });
+                            } else {
+                                resolve(resp || { success: true });
+                            }
+                        });
+                    });
+                }
+            } else {
+                console.log('No actions generated for intent:', intent);
+                this.contextText.textContent = 'Task complete';
+                this.pendingIntent = null; // Task finished or no more actions
+            }
+        } catch (e) {
+            console.error('Agent execution error:', e);
+            this.contextText.textContent = 'Agent Error';
+            this.pendingIntent = null;
+        } finally {
+            this.isExecuting = false;
+            setTimeout(() => this.updateContext(), 2000);
         }
     }
 
@@ -476,10 +557,15 @@ class CometPanel {
 
         if (type === 'user') {
             div.innerHTML = `
-        <img class="message-avatar" src="${this.user?.picture || ''}" alt="">
+        <div class="message-avatar user">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+            <circle cx="12" cy="7" r="4"/>
+          </svg>
+        </div>
         <div class="message-content">
           <div class="message-header">
-            <span class="message-name">${this.user?.name || 'You'}</span>
+            <span class="message-name">You</span>
             <span class="message-time">${time}</span>
           </div>
           <div class="message-text user">${this.escapeHtml(text)}</div>
@@ -495,7 +581,7 @@ class CometPanel {
         </div>
         <div class="message-content">
           <div class="message-header">
-            <span class="message-name">Comet</span>
+            <span class="message-name">ChatPilot</span>
             <span class="message-time">${time}</span>
           </div>
           <div class="message-text">${this.formatResponse(text)}</div>
@@ -538,6 +624,20 @@ class CometPanel {
     // VOICE MODE
     // ============================================
 
+    safeStartRecognition() {
+        if (!this.recognition || this.isMuted) return;
+        try {
+            this.recognition.start();
+            this.isListening = true;
+        } catch (e) {
+            if (e.name === 'InvalidStateError') {
+                console.warn('Recognition already started');
+            } else {
+                console.error('Safe start error:', e);
+            }
+        }
+    }
+
     initSpeechRecognition() {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -572,26 +672,16 @@ class CometPanel {
         };
 
         this.recognition.onend = () => {
-            if (this.isContinuousVoice) {
-                // In continuous mode, we handle restarts in speakText onend or after processing
-                // Don't reset UI here unless explicitly stopped
-                return;
-            }
-
-            if (this.isListening) {
-                try { this.recognition.start(); } catch (e) { }
-            } else {
-                this.isListening = false;
-                this.voiceOrb?.classList.remove('listening');
-                this.micBtn?.classList.remove('recording');
-                this.voiceStatus.textContent = 'Tap to speak';
+            console.log('Voice session ended. isMuted:', this.isMuted, 'isListening:', this.isListening, 'isSpeaking:', this.isSpeaking);
+            if (!this.isMuted && this.isListening && !this.isSpeaking && this.currentMode === 'voice') {
+                console.log('Auto-restarting voice recognition...');
+                this.safeStartRecognition();
             }
         };
 
         this.recognition.onerror = (event) => {
             console.error('Speech error:', event.error);
             this.isListening = false;
-            this.voiceOrb?.classList.remove('listening');
             this.micBtn?.classList.remove('recording');
 
             // Handle specific errors
@@ -599,43 +689,79 @@ class CometPanel {
                 this.voiceStatus.textContent = 'Microphone access denied';
                 this.addMessage('ai', '🎤 Microphone access was denied. Please allow microphone access in Chrome settings:\n\n1. Click the lock icon in the address bar\n2. Set Microphone to "Allow"\n3. Reload the page');
             } else if (event.error === 'no-speech') {
-                this.voiceStatus.textContent = 'Tap to speak';
+                console.warn('Speech error: no-speech (ignoring and keeping alive)');
+                // No need to reset UI for no-speech if we want to keep listening
+                if (!this.isMuted && this.currentMode === 'voice') {
+                    this.voiceStatus.textContent = 'Listening...';
+                }
             } else if (event.error === 'network') {
                 this.voiceStatus.textContent = 'Network error';
             } else if (event.error === 'aborted') {
-                this.voiceStatus.textContent = 'Tap to speak';
+                this.voiceStatus.textContent = 'Enable mic';
             } else {
                 this.voiceStatus.textContent = 'Error: ' + event.error;
             }
         };
     }
 
-    toggleVoiceMode() {
+    toggleMic() {
         if (!this.recognition) {
             this.voiceStatus.textContent = 'Voice not supported';
             return;
         }
 
-        if (this.isListening) {
+        if (!this.isMuted) {
+            // Mute
+            this.isMuted = true;
             this.isListening = false;
-            this.isContinuousVoice = false;
             this.recognition.stop();
             if (this.synthesis) this.synthesis.cancel();
-            this.voiceOrb.classList.remove('listening');
-            this.voiceStatus.textContent = 'Tap to speak';
+
+            this.micToggleBtn.classList.remove('active');
+            this.micIcon.style.display = 'block';
+            this.micOffIcon.style.display = 'none';
+            this.micStatusLabel.textContent = 'Mic is Muted';
+            this.voiceStatusIndicator.classList.remove('active');
+            this.voiceStatus.textContent = 'Mic is off';
         } else {
+            // Unmute / Start Listening
+            this.isMuted = false;
             this.isListening = true;
-            this.isContinuousVoice = true;
-            this.voiceTranscript.textContent = '';
+            this.voiceTranscript.textContent = 'Listening...';
             this.voiceResponse.innerHTML = '';
 
-            // Initial greeting
-            this.speakText("Hi! I'm listening. How can I help you today?");
-
-            this.recognition.start();
-            this.voiceOrb.classList.add('listening');
+            this.micToggleBtn.classList.add('active');
+            this.micIcon.style.display = 'block';
+            this.micOffIcon.style.display = 'none';
+            this.micStatusLabel.textContent = 'Mic is ON';
+            this.voiceStatusIndicator.classList.add('active');
             this.voiceStatus.textContent = 'Listening...';
+
+            try {
+                this.recognition.start();
+            } catch (e) {
+                console.error('Recognition start error:', e);
+            }
         }
+    }
+
+    // This is now called when switching TO voice mode view
+    updateVoiceModeStatus() {
+        if (this.isMuted) {
+            this.voiceStatus.textContent = 'Mic is off';
+            this.voiceStatusIndicator.classList.remove('active');
+        } else if (this.isSpeaking) {
+            this.voiceStatus.textContent = 'Speaking...';
+            this.voiceStatusIndicator.classList.add('thinking');
+        } else {
+            this.voiceStatus.textContent = 'Listening...';
+            this.voiceStatusIndicator.classList.add('active');
+        }
+    }
+
+    toggleVoiceMode() {
+        // Redundant with switchMode, but kept for compatibility
+        this.switchMode('voice');
     }
 
     toggleDictation() {
@@ -646,8 +772,7 @@ class CometPanel {
             this.recognition.stop();
             this.micBtn.classList.remove('recording');
         } else {
-            this.isListening = true;
-            this.recognition.start();
+            this.safeStartRecognition();
             this.micBtn.classList.add('recording');
         }
     }
@@ -657,6 +782,8 @@ class CometPanel {
 
         // Stop any current speech
         this.synthesis.cancel();
+        this.isSpeaking = true;
+        this.updateVoiceModeStatus();
 
         const utterance = new SpeechSynthesisUtterance(text.replace(/<[^>]+>/g, ''));
         utterance.rate = 1.05;
@@ -664,20 +791,26 @@ class CometPanel {
 
         // When AI starts speaking, stop listening to avoid hearing itself
         utterance.onstart = () => {
-            if (this.isContinuousVoice && this.isListening) {
-                this.recognition.stop();
+            if (!this.isMuted && this.isListening) {
+                try { this.recognition.stop(); } catch (e) { }
             }
         };
 
         // When AI finishes, start listening again for "Natural Conversation"
         utterance.onend = () => {
-            if (this.isContinuousVoice && !this.isListening) {
+            this.isSpeaking = false;
+            if (!this.isMuted) {
                 this.isListening = true;
                 try {
-                    this.recognition.start();
-                    this.voiceOrb?.classList.add('listening');
+                    this.safeStartRecognition();
+                    this.voiceStatusIndicator.classList.remove('thinking');
+                    this.voiceStatusIndicator.classList.add('active');
                     this.voiceStatus.textContent = 'Listening...';
-                } catch (e) { }
+                } catch (e) {
+                    console.error('Restart recognition error:', e);
+                }
+            } else {
+                this.updateVoiceModeStatus();
             }
         };
 
@@ -687,33 +820,37 @@ class CometPanel {
     async processVoiceCommand(transcript) {
         // Stop listening while processing
         this.isListening = false;
-        this.recognition.stop();
-        this.voiceOrb.classList.remove('listening');
-        this.voiceStatus.textContent = 'Processing...';
+        try { this.recognition.stop(); } catch (e) { }
+
+        this.voiceStatus.textContent = 'Thinking...';
+
+        // Trigger agent actions in parallel
+        if (this.isActionIntent(transcript)) {
+            this.executeActions(transcript);
+        }
 
         try {
             const pageContent = await this.getPageContent();
             const response = await this.callBackend('/api/chat', {
                 message: transcript,
                 pageContext: pageContent,
-                model: this.currentModel,
-                userId: this.user?.id,
+                model: 'gpt-4o', // Priority for voice
                 isVoice: true
             });
 
             const text = response.response || response.message || 'Done.';
             this.voiceResponse.innerHTML = this.formatResponse(text);
-            this.voiceStatus.textContent = 'Speaking...';
 
             // Speak response naturally
             this.speakText(text);
 
         } catch (error) {
             this.voiceStatus.textContent = 'Error: ' + error.message;
-            if (this.isContinuousVoice) {
+            this.voiceStatusIndicator.classList.remove('thinking');
+
+            if (!this.isMuted) {
                 setTimeout(() => {
-                    this.isListening = true;
-                    this.recognition.start();
+                    this.safeStartRecognition();
                 }, 2000);
             }
         }

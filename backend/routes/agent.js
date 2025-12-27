@@ -76,39 +76,46 @@ router.post('/analyze', async (req, res) => {
  */
 async function generateActionsWithLLM(intent, dom, apiKey) {
     const openAIKey = apiKey?.startsWith('sk-') ? apiKey : process.env.OPENAI_API_KEY;
+    const githubToken = process.env.GITHUB_TOKEN;
 
-    if (openAIKey) {
+    if (githubToken || openAIKey) {
         try {
-            const { generateWithOpenAI } = require('../lib/openai');
+            const modelToUse = githubToken ? 'gpt-4o' : 'gpt-4o';
 
-            const actionPrompt = `You are a browser automation assistant. Based on the user's intent and the available page elements, generate a JSON array of actions to perform.
+            // Construct the prompt using the system prompt from file + context
+            const userContext = `
+Page Title: ${dom.title || 'Unknown'}
+Page URL: ${dom.url || 'Unknown'}
 
-Available action types:
-- CLICK: { type: "CLICK", targetId: "element-id", description: "what this does" }
-- TYPE: { type: "TYPE", targetId: "element-id", value: "text to type", description: "what this does" }
-- SCROLL: { type: "SCROLL", options: { direction: "up|down", amount: 500 }, description: "what this does" }
-- SELECT: { type: "SELECT", targetId: "element-id", value: "option value", description: "what this does" }
-- WAIT: { type: "WAIT", options: { duration: 1000 }, description: "why waiting" }
+Available Interactive Elements:
+${JSON.stringify(dom.elements?.slice(0, 200) || [], null, 2)}
 
-Page: ${dom.title || 'Unknown'} (${dom.url || 'Unknown'})
+User Intent: "${intent}"
+`.trim();
 
-Available elements:
-${JSON.stringify(dom.elements?.slice(0, 50) || [], null, 2)}
-
-User intent: "${intent}"
-
-Respond with ONLY a JSON array of actions. No explanation, just the array.`;
-
-            const response = await generateWithOpenAI(openAIKey, 'gpt-4o', actionPrompt);
+            let response;
+            if (githubToken) {
+                const { generateWithGitHub } = require('../lib/github');
+                response = await generateWithGitHub(githubToken, modelToUse, userContext, SYSTEM_PROMPT);
+            } else {
+                const { generateWithOpenAI } = require('../lib/openai');
+                response = await generateWithOpenAI(openAIKey, modelToUse, userContext, SYSTEM_PROMPT);
+            }
 
             // Try to parse JSON from response
-            const jsonMatch = response.match(/\[[\s\S]*\]/);
+            // The new system prompt returns a JSON object with an "actions" field
+            const jsonMatch = response.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
             if (jsonMatch) {
-                const actions = JSON.parse(jsonMatch[0]);
-                return Array.isArray(actions) ? actions : [];
+                try {
+                    const parsed = JSON.parse(jsonMatch[0]);
+                    const actions = Array.isArray(parsed) ? parsed : (parsed.actions || []);
+                    return actions;
+                } catch (e) {
+                    console.warn('JSON parse fallback for action string:', e.message);
+                }
             }
         } catch (e) {
-            console.error('OpenAI action generation failed:', e.message);
+            console.error('Action generation failed:', e.message);
         }
     }
 
@@ -123,6 +130,19 @@ function generateDemoActions(intent, dom) {
     const intentLower = intent.toLowerCase();
     const elements = dom.elements || [];
     const actions = [];
+
+    // Pattern: "go to X", "open X", "enter to X" (URL navigation)
+    const urlMatch = intentLower.match(/(?:go\s+to|open|enter\s+to|visit)\s+([a-z0-9.-]+\.[a-z]{2,}(?:\/[^\s]*)?)/i);
+    if (urlMatch) {
+        let url = urlMatch[1];
+        if (!url.startsWith('http')) url = 'https://' + url;
+        actions.push({
+            type: 'OPEN_URL',
+            value: url,
+            description: `Navigate to ${url}`
+        });
+        return actions; // Navigation is usually the only action needed
+    }
 
     // Pattern: "click on X" or "click X"
     const clickMatch = intentLower.match(/click\s+(?:on\s+)?(?:the\s+)?[\"']?(.+?)[\"']?$/i);
