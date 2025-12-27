@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#0a0a14"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#a855f7"/>
+      <stop offset="100%" style="stop-color:#6366f1"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="128" height="128" rx="24" fill="url(#bg)"/>
+  
+  <!-- Stacked layers -->
+  <g filter="url(#glow)" transform="translate(64, 64)">
+    <!-- Bottom layer -->
+    <path d="M-32 8 L0 24 L32 8 L0 -8 Z" fill="url(#accent)" opacity="0.4" transform="translate(0, 12)"/>
+    <!-- Middle layer -->
+    <path d="M-32 8 L0 24 L32 8 L0 -8 Z" fill="url(#accent)" opacity="0.7" transform="translate(0, 0)"/>
+    <!-- Top layer -->
+    <path d="M-32 8 L0 24 L32 8 L0 -8 Z" fill="url(#accent)" transform="translate(0, -12)"/>
+    
+    <!-- Connecting lines -->
+    <line x1="0" y1="12" x2="0" y2="-4" stroke="url(#accent)" stroke-width="2" opacity="0.6"/>
+    <line x1="-32" y1="20" x2="-32" y2="8" stroke="url(#accent)" stroke-width="2" opacity="0.4"/>
+    <line x1="32" y1="20" x2="32" y2="8" stroke="url(#accent)" stroke-width="2" opacity="0.4"/>
+  </g>
+</svg>
